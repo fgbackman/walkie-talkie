@@ -1,0 +1,948 @@
+-- Walkie Talkie: all migrations, concatenated in order.
+-- Paste into Supabase -> SQL Editor -> New query -> Run.
+-- Generated 2026-10-06T15:44:58Z. Do not edit; edit the migrations.
+
+-- ========================================================================
+-- supabase/migrations/20261006000000_extensions.sql
+-- ========================================================================
+-- Extensions live in their own schema so they never shadow public objects.
+create schema if not exists extensions;
+
+create extension if not exists "pgcrypto"  with schema extensions;
+create extension if not exists "citext"    with schema extensions;
+
+-- A private schema for things no API role may ever touch.
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+
+-- ========================================================================
+-- supabase/migrations/20261006000100_schema.sql
+-- ========================================================================
+-- ===========================================================================
+-- Walkie Talkie — core schema
+-- Every table gets RLS in 20261006000300_rls.sql. Nothing is readable until
+-- a policy says so.
+-- ===========================================================================
+
+-- --- enums ----------------------------------------------------------------
+create type public.user_role      as enum ('user', 'moderator', 'admin');
+create type public.room_type      as enum ('open', 'squad', 'guided', 'ambient');
+create type public.participant_role as enum ('host', 'cohost', 'speaker', 'listener');
+create type public.walk_visibility as enum ('private', 'followers', 'public');
+create type public.post_kind      as enum ('walk', 'clip', 'text', 'challenge', 'room');
+create type public.report_status  as enum ('open', 'actioned', 'dismissed');
+create type public.report_target  as enum ('user', 'room', 'post', 'comment');
+
+-- --- profiles -------------------------------------------------------------
+create table public.profiles (
+  id                  uuid primary key references auth.users (id) on delete cascade,
+  handle              text        not null,
+  callsign            text,
+  display_name        text        not null default '',
+  avatar_url          text,
+  bio                 text        not null default '',
+  role                public.user_role not null default 'user',
+  interests           text[]      not null default '{}',
+
+  -- privacy defaults deliberately chosen to be the safe ones
+  share_live_location boolean     not null default false,
+  fuzz_endpoints      boolean     not null default true,
+  consent_recording   boolean     not null default false,
+
+  weekly_goal_m       integer     not null default 30000,
+  suspended_until     timestamptz,
+  banned_at           timestamptz,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+
+  constraint handle_shape check (handle ~ '^[a-z0-9][a-z0-9._-]{2,29}$'),
+  constraint bio_len      check (char_length(bio) <= 280),
+  constraint goal_sane    check (weekly_goal_m between 0 and 1000000)
+);
+create unique index profiles_handle_key on public.profiles (lower(handle));
+create index profiles_role_idx on public.profiles (role) where role <> 'user';
+
+-- --- rooms ----------------------------------------------------------------
+create table public.rooms (
+  id               uuid primary key default extensions.gen_random_uuid(),
+  title            text        not null,
+  description      text        not null default '',
+  host_id          uuid        not null references public.profiles (id) on delete cascade,
+  type             public.room_type not null default 'open',
+  topics           text[]      not null default '{}',
+  target_pace_kmh  numeric(4,2),
+  livekit_room     text        not null unique,
+  is_live          boolean     not null default true,
+  recording_enabled boolean    not null default false,
+  max_participants integer     not null default 500,
+  listener_count   integer     not null default 0,
+  walking_count    integer     not null default 0,
+  started_at       timestamptz not null default now(),
+  ended_at         timestamptz,
+  closed_by        uuid references public.profiles (id),
+  close_reason     text,
+  created_at       timestamptz not null default now(),
+
+  constraint title_len check (char_length(title) between 3 and 80),
+  constraint desc_len  check (char_length(description) <= 500),
+  constraint topics_sane check (array_length(topics, 1) is null or array_length(topics, 1) <= 6),
+  constraint cap_sane  check (max_participants between 2 and 5000)
+);
+create index rooms_live_idx    on public.rooms (is_live, started_at desc) where is_live;
+create index rooms_host_idx    on public.rooms (host_id);
+create index rooms_topics_idx  on public.rooms using gin (topics);
+
+-- --- room participants ----------------------------------------------------
+create table public.room_participants (
+  room_id      uuid not null references public.rooms (id) on delete cascade,
+  user_id      uuid not null references public.profiles (id) on delete cascade,
+  role         public.participant_role not null default 'listener',
+  hand_raised  boolean not null default false,
+  is_walking   boolean not null default false,
+  muted_by_host boolean not null default false,
+  joined_at    timestamptz not null default now(),
+  left_at      timestamptz,
+  primary key (room_id, user_id)
+);
+create index room_participants_user_idx on public.room_participants (user_id) where left_at is null;
+create index room_participants_live_idx on public.room_participants (room_id) where left_at is null;
+
+-- --- walks ----------------------------------------------------------------
+create table public.walks (
+  id                uuid primary key default extensions.gen_random_uuid(),
+  user_id           uuid not null references public.profiles (id) on delete cascade,
+  room_id           uuid references public.rooms (id) on delete set null,
+  title             text not null default '',
+  started_at        timestamptz not null default now(),
+  ended_at          timestamptz,
+  distance_m        integer not null default 0,
+  duration_s        integer not null default 0,
+  elevation_gain_m  integer not null default 0,
+  steps             integer not null default 0,
+  avg_pace_s_per_km integer,
+  on_air_s          integer not null default 0,
+  visibility        public.walk_visibility not null default 'followers',
+  created_at        timestamptz not null default now(),
+
+  constraint distance_sane check (distance_m between 0 and 500000),
+  constraint duration_sane check (duration_s between 0 and 172800),
+  constraint title_len     check (char_length(title) <= 120)
+);
+create index walks_user_idx on public.walks (user_id, started_at desc);
+create index walks_room_idx on public.walks (room_id) where room_id is not null;
+
+-- --- walk points ----------------------------------------------------------
+-- The most sensitive table in the product. Owner-only, no exceptions,
+-- not even for moderators.
+create table public.walk_points (
+  id          bigint generated always as identity primary key,
+  walk_id     uuid not null references public.walks (id) on delete cascade,
+  t           timestamptz not null,
+  lat         double precision not null,
+  lng         double precision not null,
+  accuracy_m  real,
+  altitude_m  real,
+  speed_mps   real,
+  constraint lat_range check (lat between -90 and 90),
+  constraint lng_range check (lng between -180 and 180)
+);
+create index walk_points_walk_idx on public.walk_points (walk_id, t);
+
+create table public.walk_splits (
+  walk_id    uuid not null references public.walks (id) on delete cascade,
+  km         integer not null,
+  duration_s integer not null,
+  primary key (walk_id, km),
+  constraint km_sane check (km between 1 and 500)
+);
+
+-- --- social ---------------------------------------------------------------
+create table public.posts (
+  id         uuid primary key default extensions.gen_random_uuid(),
+  author_id  uuid not null references public.profiles (id) on delete cascade,
+  kind       public.post_kind not null default 'text',
+  body       text not null default '',
+  tags       text[] not null default '{}',
+  walk_id    uuid references public.walks (id) on delete set null,
+  room_id    uuid references public.rooms (id) on delete set null,
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  deleted_by uuid references public.profiles (id),
+  constraint body_len check (char_length(body) <= 2000)
+);
+create index posts_feed_idx on public.posts (created_at desc) where deleted_at is null;
+create index posts_tags_idx on public.posts using gin (tags);
+create index posts_author_idx on public.posts (author_id);
+
+create table public.comments (
+  id         uuid primary key default extensions.gen_random_uuid(),
+  post_id    uuid not null references public.posts (id) on delete cascade,
+  author_id  uuid not null references public.profiles (id) on delete cascade,
+  body       text not null,
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  constraint comment_len check (char_length(body) between 1 and 1000)
+);
+create index comments_post_idx on public.comments (post_id, created_at);
+
+create table public.post_reactions (
+  post_id uuid not null references public.posts (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  kind    text not null default 'like',
+  primary key (post_id, user_id, kind),
+  constraint kind_len check (char_length(kind) <= 16)
+);
+
+create table public.follows (
+  follower_id uuid not null references public.profiles (id) on delete cascade,
+  followee_id uuid not null references public.profiles (id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (follower_id, followee_id),
+  constraint no_self_follow check (follower_id <> followee_id)
+);
+create index follows_followee_idx on public.follows (followee_id);
+
+create table public.blocks (
+  blocker_id uuid not null references public.profiles (id) on delete cascade,
+  blocked_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_id),
+  constraint no_self_block check (blocker_id <> blocked_id)
+);
+
+-- --- moderation -----------------------------------------------------------
+create table public.reports (
+  id          uuid primary key default extensions.gen_random_uuid(),
+  reporter_id uuid not null references public.profiles (id) on delete cascade,
+  target_type public.report_target not null,
+  target_id   uuid not null,
+  reason      text not null,
+  details     text not null default '',
+  status      public.report_status not null default 'open',
+  handled_by  uuid references public.profiles (id),
+  handled_at  timestamptz,
+  resolution  text,
+  created_at  timestamptz not null default now(),
+  constraint reason_len  check (char_length(reason) between 2 and 60),
+  constraint details_len check (char_length(details) <= 1000)
+);
+create index reports_open_idx on public.reports (created_at desc) where status = 'open';
+
+create table public.audit_log (
+  id          bigint generated always as identity primary key,
+  actor_id    uuid references public.profiles (id) on delete set null,
+  action      text not null,
+  target_type text,
+  target_id   uuid,
+  metadata    jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+create index audit_log_created_idx on public.audit_log (created_at desc);
+create index audit_log_actor_idx   on public.audit_log (actor_id, created_at desc);
+
+-- --- one-shot admin bootstrap --------------------------------------------
+-- Seeded by the operator; consumed (and the row deleted) the first time the
+-- matching email signs in. Lives in `private` so no API role can read it.
+create table private.admin_bootstrap (
+  email      text primary key,
+  created_at timestamptz not null default now()
+);
+
+-- ========================================================================
+-- supabase/migrations/20261006000200_functions.sql
+-- ========================================================================
+-- ===========================================================================
+-- Functions and triggers.
+--
+-- Every SECURITY DEFINER function pins `search_path` to an empty string and
+-- fully qualifies its object names. Without that, a caller can create a
+-- shadowing object in a schema they control and have it run with the
+-- definer's privileges — the classic Postgres privilege-escalation bug.
+-- ===========================================================================
+
+-- --- role checks ----------------------------------------------------------
+create or replace function public.is_admin(uid uuid default auth.uid())
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = uid and p.role = 'admin' and p.banned_at is null
+  );
+$$;
+
+create or replace function public.is_moderator(uid uuid default auth.uid())
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = uid and p.role in ('admin', 'moderator') and p.banned_at is null
+  );
+$$;
+
+create or replace function public.is_active(uid uuid default auth.uid())
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = uid
+      and p.banned_at is null
+      and (p.suspended_until is null or p.suspended_until < now())
+  );
+$$;
+
+-- Is `viewer` allowed to see `owner`'s followers-only content?
+create or replace function public.follows_user(viewer uuid, owner uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.follows f
+    where f.follower_id = viewer and f.followee_id = owner
+  );
+$$;
+
+create or replace function public.in_room(rid uuid, uid uuid default auth.uid())
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.room_participants rp
+    where rp.room_id = rid and rp.user_id = uid and rp.left_at is null
+  );
+$$;
+
+-- --- new user -> profile --------------------------------------------------
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  base_handle text;
+  final_handle text;
+  n int := 0;
+  promote boolean := false;
+begin
+  base_handle := lower(regexp_replace(split_part(coalesce(new.email, 'walker'), '@', 1),
+                                      '[^a-z0-9._-]', '', 'g'));
+  if char_length(base_handle) < 3 then
+    base_handle := 'walker';
+  end if;
+  base_handle := left(base_handle, 24);
+
+  final_handle := base_handle;
+  while exists (select 1 from public.profiles p where lower(p.handle) = final_handle) loop
+    n := n + 1;
+    final_handle := base_handle || n::text;
+    if n > 500 then
+      final_handle := base_handle || substr(encode(extensions.gen_random_bytes(4), 'hex'), 1, 6);
+      exit;
+    end if;
+  end loop;
+
+  select true into promote
+  from private.admin_bootstrap b
+  where lower(b.email) = lower(coalesce(new.email, ''))
+  limit 1;
+
+  insert into public.profiles (id, handle, display_name, avatar_url, role)
+  values (
+    new.id,
+    final_handle,
+    coalesce(new.raw_user_meta_data ->> 'full_name',
+             new.raw_user_meta_data ->> 'name',
+             final_handle),
+    new.raw_user_meta_data ->> 'avatar_url',
+    case when coalesce(promote, false) then 'admin'::public.user_role
+         else 'user'::public.user_role end
+  );
+
+  if coalesce(promote, false) then
+    delete from private.admin_bootstrap b where lower(b.email) = lower(new.email);
+    insert into public.audit_log (actor_id, action, target_type, target_id, metadata)
+    values (new.id, 'admin.bootstrap', 'user', new.id,
+            jsonb_build_object('email', new.email));
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- --- privilege-escalation guard ------------------------------------------
+-- RLS WITH CHECK cannot see the OLD row, so the "you may not promote
+-- yourself" rule is a trigger. Only a moderator/admin (or the service role,
+-- which bypasses RLS but still hits this trigger) may change role, bans or
+-- suspensions.
+create or replace function public.guard_profile_privileges()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if (new.role is distinct from old.role)
+     or (new.banned_at is distinct from old.banned_at)
+     or (new.suspended_until is distinct from old.suspended_until)
+  then
+    -- auth.uid() is null when the service role acts outside a user session.
+    if auth.uid() is not null and not public.is_admin(auth.uid()) then
+      raise exception 'not authorised to change role, ban or suspension'
+        using errcode = '42501';
+    end if;
+    if auth.uid() is not null and new.id = auth.uid()
+       and new.role is distinct from old.role then
+      raise exception 'an admin may not change their own role'
+        using errcode = '42501';
+    end if;
+  end if;
+
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+create trigger profiles_guard_privileges
+  before update on public.profiles
+  for each row execute function public.guard_profile_privileges();
+
+-- --- recording consent ----------------------------------------------------
+-- A room may only record if every current publisher has opted in.
+create or replace function public.room_can_record(rid uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select not exists (
+    select 1
+    from public.room_participants rp
+    join public.profiles p on p.id = rp.user_id
+    where rp.room_id = rid
+      and rp.left_at is null
+      and rp.role in ('host', 'cohost', 'speaker')
+      and p.consent_recording = false
+  );
+$$;
+
+-- --- live counters --------------------------------------------------------
+create or replace function public.refresh_room_counts(rid uuid)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.rooms r
+  set listener_count = (
+        select count(*) from public.room_participants rp
+        where rp.room_id = rid and rp.left_at is null),
+      walking_count = (
+        select count(*) from public.room_participants rp
+        where rp.room_id = rid and rp.left_at is null and rp.is_walking)
+  where r.id = rid;
+$$;
+
+create or replace function public.on_participant_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform public.refresh_room_counts(coalesce(new.room_id, old.room_id));
+  return coalesce(new, old);
+end;
+$$;
+
+create trigger room_participants_counts
+  after insert or update or delete on public.room_participants
+  for each row execute function public.on_participant_change();
+
+-- --- walk finalisation ----------------------------------------------------
+-- Recomputes the summary from the stored points so a client cannot simply
+-- POST "I walked 400 km".
+create or replace function public.finalize_walk(p_walk_id uuid)
+returns public.walks
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  w public.walks;
+  computed_m numeric := 0;
+  secs integer := 0;
+begin
+  select * into w from public.walks where id = p_walk_id;
+  if w is null then
+    raise exception 'walk not found' using errcode = 'P0002';
+  end if;
+  if w.user_id <> auth.uid() and not public.is_admin(auth.uid()) then
+    raise exception 'not your walk' using errcode = '42501';
+  end if;
+
+  with ordered as (
+    select lat, lng, t,
+           lag(lat) over (order by t) as plat,
+           lag(lng) over (order by t) as plng
+    from public.walk_points where walk_id = p_walk_id
+  )
+  select coalesce(sum(
+    6371000 * 2 * asin(sqrt(
+      power(sin(radians(lat - plat) / 2), 2) +
+      cos(radians(plat)) * cos(radians(lat)) *
+      power(sin(radians(lng - plng) / 2), 2)
+    ))
+  ), 0)
+  into computed_m
+  from ordered where plat is not null;
+
+  select greatest(0, extract(epoch from (coalesce(w.ended_at, now()) - w.started_at))::int)
+  into secs;
+
+  update public.walks
+  set distance_m = round(computed_m)::int,
+      duration_s = secs,
+      ended_at   = coalesce(ended_at, now()),
+      avg_pace_s_per_km = case when computed_m > 50
+                               then round(secs / (computed_m / 1000.0))::int
+                               else null end
+  where id = p_walk_id
+  returning * into w;
+
+  return w;
+end;
+$$;
+
+-- --- audit helper ---------------------------------------------------------
+create or replace function public.log_audit(
+  p_action text,
+  p_target_type text default null,
+  p_target_id uuid default null,
+  p_metadata jsonb default '{}'::jsonb
+)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  insert into public.audit_log (actor_id, action, target_type, target_id, metadata)
+  values (auth.uid(), p_action, p_target_type, p_target_id, p_metadata);
+$$;
+
+-- --- updated_at -----------------------------------------------------------
+create or replace function public.touch_updated_at()
+returns trigger language plpgsql set search_path = '' as $$
+begin new.updated_at := now(); return new; end;
+$$;
+
+-- ========================================================================
+-- supabase/migrations/20261006000300_rls.sql
+-- ========================================================================
+-- ===========================================================================
+-- Row Level Security.
+--
+-- Baseline: RLS on, force it for the table owner too, and no policy means
+-- no access. Policies below grant the minimum each role needs.
+-- ===========================================================================
+
+alter table public.profiles          enable row level security;
+alter table public.rooms             enable row level security;
+alter table public.room_participants enable row level security;
+alter table public.walks             enable row level security;
+alter table public.walk_points       enable row level security;
+alter table public.walk_splits       enable row level security;
+alter table public.posts             enable row level security;
+alter table public.comments          enable row level security;
+alter table public.post_reactions    enable row level security;
+alter table public.follows           enable row level security;
+alter table public.blocks            enable row level security;
+alter table public.reports           enable row level security;
+alter table public.audit_log         enable row level security;
+
+-- --- profiles -------------------------------------------------------------
+create policy profiles_read on public.profiles
+  for select to authenticated
+  using (
+    banned_at is null
+    or id = (select auth.uid())
+    or public.is_moderator((select auth.uid()))
+  );
+
+create policy profiles_update_own on public.profiles
+  for update to authenticated
+  using (id = (select auth.uid()))
+  with check (id = (select auth.uid()));
+
+create policy profiles_moderate on public.profiles
+  for update to authenticated
+  using (public.is_admin((select auth.uid())));
+
+-- --- rooms ----------------------------------------------------------------
+create policy rooms_read on public.rooms
+  for select to authenticated
+  using (
+    public.is_moderator((select auth.uid()))
+    or host_id = (select auth.uid())
+    or type <> 'squad'
+    or public.in_room(id, (select auth.uid()))
+  );
+
+create policy rooms_create on public.rooms
+  for insert to authenticated
+  with check (
+    host_id = (select auth.uid())
+    and public.is_active((select auth.uid()))
+  );
+
+create policy rooms_update_host on public.rooms
+  for update to authenticated
+  using (host_id = (select auth.uid()) or public.is_moderator((select auth.uid())))
+  with check (host_id = (select auth.uid()) or public.is_moderator((select auth.uid())));
+
+-- --- room participants ----------------------------------------------------
+create policy room_participants_read on public.room_participants
+  for select to authenticated
+  using (
+    user_id = (select auth.uid())
+    or public.in_room(room_id, (select auth.uid()))
+    or public.is_moderator((select auth.uid()))
+  );
+
+create policy room_participants_join on public.room_participants
+  for insert to authenticated
+  with check (
+    user_id = (select auth.uid())
+    and public.is_active((select auth.uid()))
+    and exists (select 1 from public.rooms r where r.id = room_id and r.is_live)
+  );
+
+create policy room_participants_update_self on public.room_participants
+  for update to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+create policy room_participants_update_host on public.room_participants
+  for update to authenticated
+  using (
+    exists (select 1 from public.rooms r
+            where r.id = room_id and r.host_id = (select auth.uid()))
+    or public.is_moderator((select auth.uid()))
+  );
+
+create policy room_participants_leave on public.room_participants
+  for delete to authenticated
+  using (
+    user_id = (select auth.uid())
+    or exists (select 1 from public.rooms r
+               where r.id = room_id and r.host_id = (select auth.uid()))
+    or public.is_moderator((select auth.uid()))
+  );
+
+-- --- walks ----------------------------------------------------------------
+create policy walks_read on public.walks
+  for select to authenticated
+  using (
+    user_id = (select auth.uid())
+    or visibility = 'public'
+    or (visibility = 'followers'
+        and public.follows_user((select auth.uid()), user_id))
+  );
+
+create policy walks_insert_own on public.walks
+  for insert to authenticated
+  with check (user_id = (select auth.uid()) and public.is_active((select auth.uid())));
+
+create policy walks_update_own on public.walks
+  for update to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+create policy walks_delete_own on public.walks
+  for delete to authenticated
+  using (user_id = (select auth.uid()));
+
+-- --- walk points: owner only, full stop -----------------------------------
+create policy walk_points_owner_read on public.walk_points
+  for select to authenticated
+  using (exists (select 1 from public.walks w
+                 where w.id = walk_id and w.user_id = (select auth.uid())));
+
+create policy walk_points_owner_write on public.walk_points
+  for insert to authenticated
+  with check (exists (select 1 from public.walks w
+                      where w.id = walk_id
+                        and w.user_id = (select auth.uid())
+                        and w.ended_at is null));
+
+create policy walk_points_owner_delete on public.walk_points
+  for delete to authenticated
+  using (exists (select 1 from public.walks w
+                 where w.id = walk_id and w.user_id = (select auth.uid())));
+
+-- --- splits follow the walk's visibility ----------------------------------
+create policy walk_splits_read on public.walk_splits
+  for select to authenticated
+  using (exists (
+    select 1 from public.walks w
+    where w.id = walk_id
+      and (w.user_id = (select auth.uid())
+           or w.visibility = 'public'
+           or (w.visibility = 'followers'
+               and public.follows_user((select auth.uid()), w.user_id)))
+  ));
+
+create policy walk_splits_write on public.walk_splits
+  for insert to authenticated
+  with check (exists (select 1 from public.walks w
+                      where w.id = walk_id and w.user_id = (select auth.uid())));
+
+-- --- posts ----------------------------------------------------------------
+create policy posts_read on public.posts
+  for select to authenticated
+  using (
+    deleted_at is null
+    and not exists (
+      select 1 from public.blocks b
+      where (b.blocker_id = (select auth.uid()) and b.blocked_id = author_id)
+         or (b.blocker_id = author_id and b.blocked_id = (select auth.uid()))
+    )
+  );
+
+create policy posts_read_moderator on public.posts
+  for select to authenticated
+  using (public.is_moderator((select auth.uid())));
+
+create policy posts_insert_own on public.posts
+  for insert to authenticated
+  with check (author_id = (select auth.uid()) and public.is_active((select auth.uid())));
+
+create policy posts_update_own on public.posts
+  for update to authenticated
+  using (author_id = (select auth.uid()) or public.is_moderator((select auth.uid())))
+  with check (author_id = (select auth.uid()) or public.is_moderator((select auth.uid())));
+
+-- --- comments / reactions -------------------------------------------------
+create policy comments_read on public.comments
+  for select to authenticated
+  using (deleted_at is null or public.is_moderator((select auth.uid())));
+
+create policy comments_insert_own on public.comments
+  for insert to authenticated
+  with check (author_id = (select auth.uid()) and public.is_active((select auth.uid())));
+
+create policy comments_update_own on public.comments
+  for update to authenticated
+  using (author_id = (select auth.uid()) or public.is_moderator((select auth.uid())));
+
+create policy reactions_read on public.post_reactions
+  for select to authenticated using (true);
+
+create policy reactions_write_own on public.post_reactions
+  for insert to authenticated with check (user_id = (select auth.uid()));
+
+create policy reactions_delete_own on public.post_reactions
+  for delete to authenticated using (user_id = (select auth.uid()));
+
+-- --- follows / blocks -----------------------------------------------------
+create policy follows_read on public.follows
+  for select to authenticated using (true);
+
+create policy follows_write_own on public.follows
+  for insert to authenticated with check (follower_id = (select auth.uid()));
+
+create policy follows_delete_own on public.follows
+  for delete to authenticated using (follower_id = (select auth.uid()));
+
+create policy blocks_own on public.blocks
+  for all to authenticated
+  using (blocker_id = (select auth.uid()))
+  with check (blocker_id = (select auth.uid()));
+
+-- --- reports --------------------------------------------------------------
+create policy reports_insert on public.reports
+  for insert to authenticated
+  with check (reporter_id = (select auth.uid()));
+
+create policy reports_read on public.reports
+  for select to authenticated
+  using (reporter_id = (select auth.uid()) or public.is_moderator((select auth.uid())));
+
+create policy reports_handle on public.reports
+  for update to authenticated
+  using (public.is_moderator((select auth.uid())))
+  with check (public.is_moderator((select auth.uid())));
+
+-- --- audit log: admins read, nobody writes through the API ---------------
+create policy audit_read_admin on public.audit_log
+  for select to authenticated
+  using (public.is_admin((select auth.uid())));
+
+-- ========================================================================
+-- supabase/migrations/20261006000400_grants.sql
+-- ========================================================================
+-- ===========================================================================
+-- Grants.
+--
+-- Supabase ships broad default privileges to `anon` and `authenticated`.
+-- We revoke them and hand back only what the app needs, so a mistake in a
+-- policy fails closed rather than exposing a whole table.
+-- ===========================================================================
+
+revoke all on all tables    in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+revoke all on all functions in schema public from anon, authenticated;
+
+alter default privileges in schema public
+  revoke all on tables from anon, authenticated;
+
+-- anon can do nothing but authenticate. Not one table.
+-- authenticated gets per-table verbs; RLS then decides which rows.
+grant select, update                 on public.profiles          to authenticated;
+grant select, insert, update         on public.rooms             to authenticated;
+grant select, insert, update, delete on public.room_participants to authenticated;
+grant select, insert, update, delete on public.walks             to authenticated;
+grant select, insert, delete         on public.walk_points       to authenticated;
+grant select, insert                 on public.walk_splits       to authenticated;
+grant select, insert, update         on public.posts             to authenticated;
+grant select, insert, update         on public.comments          to authenticated;
+grant select, insert, delete         on public.post_reactions    to authenticated;
+grant select, insert, delete         on public.follows           to authenticated;
+grant select, insert, delete         on public.blocks            to authenticated;
+grant select, insert, update         on public.reports           to authenticated;
+grant select                         on public.audit_log         to authenticated;
+
+grant usage on all sequences in schema public to authenticated;
+
+grant execute on function public.is_admin(uuid)        to authenticated;
+grant execute on function public.is_moderator(uuid)    to authenticated;
+grant execute on function public.is_active(uuid)       to authenticated;
+grant execute on function public.in_room(uuid, uuid)   to authenticated;
+grant execute on function public.follows_user(uuid, uuid) to authenticated;
+grant execute on function public.room_can_record(uuid) to authenticated;
+grant execute on function public.finalize_walk(uuid)   to authenticated;
+grant execute on function public.log_audit(text, text, uuid, jsonb) to authenticated;
+
+-- Never reachable from the API roles.
+revoke all on schema private from anon, authenticated;
+revoke all on all tables in schema private from anon, authenticated;
+
+-- ========================================================================
+-- supabase/migrations/20261006000500_ratelimit.sql
+-- ========================================================================
+-- ===========================================================================
+-- Rate limiting in Postgres.
+--
+-- An in-process counter is useless on serverless: every cold start gets a
+-- fresh one. This is a fixed-window counter in the database, so the limit
+-- holds across every Netlify instance. Called only with the service role.
+-- ===========================================================================
+
+create table private.rate_limits (
+  bucket      text        not null,
+  window_start timestamptz not null,
+  hits        integer     not null default 0,
+  primary key (bucket, window_start)
+);
+
+create index rate_limits_window_idx on private.rate_limits (window_start);
+
+-- Returns true when the call is allowed, false when the bucket is exhausted.
+create or replace function private.consume_rate_limit(
+  p_bucket   text,
+  p_limit    integer,
+  p_window_s integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  w timestamptz;
+  n integer;
+begin
+  w := to_timestamp(floor(extract(epoch from now()) / p_window_s) * p_window_s);
+
+  insert into private.rate_limits (bucket, window_start, hits)
+  values (p_bucket, w, 1)
+  on conflict (bucket, window_start)
+  do update set hits = private.rate_limits.hits + 1
+  returning hits into n;
+
+  return n <= p_limit;
+end;
+$$;
+
+-- Housekeeping: drop windows older than a day.
+create or replace function private.prune_rate_limits()
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  delete from private.rate_limits where window_start < now() - interval '1 day';
+$$;
+
+revoke all on function private.consume_rate_limit(text, integer, integer)
+  from public, anon, authenticated;
+
+-- ========================================================================
+-- supabase/migrations/20261006000600_realtime.sql
+-- ========================================================================
+-- Realtime: the client subscribes to participant and room changes so the
+-- stage updates without polling. RLS still applies to realtime payloads.
+alter publication supabase_realtime add table public.room_participants;
+alter publication supabase_realtime add table public.rooms;
+
+-- Replica identity full so UPDATE payloads carry the old row too.
+alter table public.room_participants replica identity full;
+alter table public.rooms replica identity full;
+
+-- ========================================================================
+-- supabase/migrations/20261006000700_ratelimit_rpc.sql
+-- ========================================================================
+-- A thin public wrapper so PostgREST can reach the limiter. Execution is
+-- revoked from both API roles; only the service role may call it, and the
+-- service role is only ever used server-side.
+create or replace function public.consume_rate_limit(
+  p_bucket   text,
+  p_limit    integer,
+  p_window_s integer
+)
+returns boolean
+language sql
+security definer
+set search_path = ''
+as $$
+  select private.consume_rate_limit(p_bucket, p_limit, p_window_s);
+$$;
+
+revoke all on function public.consume_rate_limit(text, integer, integer)
+  from public, anon, authenticated;
+grant execute on function public.consume_rate_limit(text, integer, integer)
+  to service_role;
+

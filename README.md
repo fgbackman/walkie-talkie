@@ -29,6 +29,14 @@ not the control. Admin and account-settings routes additionally require
 See [SECURITY.md](./SECURITY.md) for the full threat model and the checklist
 run before each release.
 
+## Deploying it for the first time
+
+Follow [SETUP.md](./SETUP.md) — an ordered runbook for Netlify, Supabase,
+Google OAuth and LiveKit, with the exact redirect URIs and the verification
+steps that catch the two mistakes that actually matter (a secret with a
+`NEXT_PUBLIC_` prefix, and a Row Level Security policy that lets a stranger
+read someone's route).
+
 ## Local setup
 
 ```bash

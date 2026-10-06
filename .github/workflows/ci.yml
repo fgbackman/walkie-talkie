@@ -53,7 +53,11 @@ jobs:
       - name: Scan the build for leaked secrets
         run: npm run secrets:scan
 
+  # CodeQL needs GitHub Advanced Security on a private repo. It runs
+  # automatically if this repo is ever made public; until then the `verify`
+  # job above is the gate.
   codeql:
+    if: github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     permissions:
       security-events: write
