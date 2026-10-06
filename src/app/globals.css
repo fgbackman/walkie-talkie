@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   Walkie Talkie — field-radio palette.
+   Olive chassis, tuning-lamp amber, on-air red, trail teal.
+   Light is the base; dark is redefined for both the un-stamped
+   prefers-color-scheme case and an explicit data-theme="dark".
+   =========================================================================== */
+
+:root {
+  --bench: #c5c7b9;
+  --chassis: #23261f;
+  --paper: #e9e8e0;
+  --card: #fdfdf8;
+  --card-2: #f2f1e8;
+  --ink: #191c18;
+  --ink-2: #4c5349;
+  --ink-3: #7e8578;
+  --line: #d6d6c9;
+  --line-2: #e4e3d9;
+  --amber: #de8626;
+  --amber-ghost: #f7e7d0;
+  --signal: #c4402c;
+  --signal-ghost: #f6dfd9;
+  --teal: #2e6c67;
+  --teal-ghost: #d8e7e4;
+  --on-amber: #26190a;
+  --on-chassis: #f3f1e6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bench: #0c0e09;
+    --chassis: #101309;
+    --paper: #171a14;
+    --card: #1f231a;
+    --card-2: #252a1f;
+    --ink: #edefe4;
+    --ink-2: #a7ae9d;
+    --ink-3: #79806e;
+    --line: #2f3428;
+    --line-2: #272c21;
+    --amber: #f0a551;
+    --amber-ghost: #3a2b14;
+    --signal: #e4705a;
+    --signal-ghost: #3a1e17;
+    --teal: #63b3a9;
+    --teal-ghost: #16302c;
+    --on-amber: #22190c;
+    --on-chassis: #f3f1e6;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bench: #0c0e09;
+  --chassis: #101309;
+  --paper: #171a14;
+  --card: #1f231a;
+  --card-2: #252a1f;
+  --ink: #edefe4;
+  --ink-2: #a7ae9d;
+  --ink-3: #79806e;
+  --line: #2f3428;
+  --line-2: #272c21;
+  --amber: #f0a551;
+  --amber-ghost: #3a2b14;
+  --signal: #e4705a;
+  --signal-ghost: #3a1e17;
+  --teal: #63b3a9;
+  --teal-ghost: #16302c;
+  --on-amber: #22190c;
+  --on-chassis: #f3f1e6;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-amber: var(--amber);
+  --color-amber-ghost: var(--amber-ghost);
+  --color-signal: var(--signal);
+  --color-signal-ghost: var(--signal-ghost);
+  --color-teal: var(--teal);
+  --color-teal-ghost: var(--teal-ghost);
+  --color-chassis: var(--chassis);
+  --font-display: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* --- small component layer, mirroring the prototype ---------------------- */
+@layer components {
+  .wt-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+  }
+  .wt-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .wt-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 15px;
+    border-radius: 14px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 15.5px;
+    background: var(--chassis);
+    color: var(--on-chassis);
+    transition: transform 0.12s;
+  }
+  .wt-btn:active { transform: scale(0.98); }
+  .wt-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .wt-btn-amber { background: var(--amber); color: var(--on-amber); }
+  .wt-btn-red { background: var(--signal); color: #fff; }
+  .wt-btn-ghost {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-2);
+  }
+  .wt-chip {
+    flex: none;
+    padding: 7px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .wt-chip[aria-pressed="true"] {
+    background: var(--chassis);
+    border-color: var(--chassis);
+    color: var(--on-chassis);
+  }
+  .wt-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--signal);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    padding: 3px 7px;
+    border-radius: 4px;
+  }
+  .wt-input {
+    width: 100%;
+    padding: 12px 13px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    font-size: 15px;
+    color: var(--ink);
+  }
+  .wt-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+}
