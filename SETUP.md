@@ -45,12 +45,29 @@ provider dashboard — do not just delete the message.
 the environment at startup and there are no variables yet. It fails loudly on
 purpose rather than shipping a half-configured app.
 
-Now click *Project configuration* → *General* and note the site URL, e.g.
-`https://walkie-talkie-app.netlify.app`. That is your `NEXT_PUBLIC_SITE_URL`.
+### Name the site
 
-> Rename the site under *Project configuration → General → Change site name*
-> if you want a nicer subdomain. Do it now, before the URL is wired into
-> Google and Supabase.
+Netlify assigns a random subdomain (`glittering-marzipan-a1b2c3.netlify.app`).
+To change it: *Project configuration* → *General* → *Change site name*.
+
+`*.netlify.app` names are globally unique across every Netlify account, so the
+obvious ones are long gone. The name field checks availability as you type —
+that is the only reliable way to find a free one. Try adding a word that is
+yours: an initial, a city, a year.
+
+**Do this before step 3.** Once the URL is wired into Google and Supabase,
+renaming means editing it in three places.
+
+Whatever you end up with — call it `<your-site>` below — goes in exactly
+three places:
+
+| Where | Value |
+| --- | --- |
+| Netlify env vars | `NEXT_PUBLIC_SITE_URL=https://<your-site>.netlify.app` |
+| Supabase → Auth → URL Configuration → Site URL | `https://<your-site>.netlify.app` |
+| Supabase → Auth → URL Configuration → Redirect URLs | `https://<your-site>.netlify.app/auth/callback` |
+
+A custom domain later changes the same three values and nothing else.
 
 ---
 
