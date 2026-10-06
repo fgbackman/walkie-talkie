@@ -58,14 +58,14 @@ yours: an initial, a city, a year.
 **Do this before step 3.** Once the URL is wired into Google and Supabase,
 renaming means editing it in three places.
 
-Whatever you end up with — call it `<your-site>` below — goes in exactly
-three places:
+This site is named **`walkie-talkie-prod`**, so its URL is
+`https://walkie-talkie-prod.netlify.app`. That goes in exactly three places:
 
 | Where | Value |
 | --- | --- |
-| Netlify env vars | `NEXT_PUBLIC_SITE_URL=https://<your-site>.netlify.app` |
-| Supabase → Auth → URL Configuration → Site URL | `https://<your-site>.netlify.app` |
-| Supabase → Auth → URL Configuration → Redirect URLs | `https://<your-site>.netlify.app/auth/callback` |
+| Netlify env vars | `NEXT_PUBLIC_SITE_URL=https://walkie-talkie-prod.netlify.app` |
+| Supabase → Auth → URL Configuration → Site URL | `https://walkie-talkie-prod.netlify.app` |
+| Supabase → Auth → URL Configuration → Redirect URLs | `https://walkie-talkie-prod.netlify.app/auth/callback` |
 
 A custom domain later changes the same three values and nothing else.
 
@@ -173,7 +173,7 @@ SUPABASE_SERVICE_ROLE_KEY=<service role key>
 NEXT_PUBLIC_LIVEKIT_URL=wss://<project>.livekit.cloud
 LIVEKIT_API_KEY=<api key>
 LIVEKIT_API_SECRET=<api secret>
-NEXT_PUBLIC_SITE_URL=https://<your-site>.netlify.app
+NEXT_PUBLIC_SITE_URL=https://walkie-talkie-prod.netlify.app
 ```
 
 Set the scope to **All deploy contexts**.
@@ -189,10 +189,10 @@ Set the scope to **All deploy contexts**.
 
 *Authentication* → *URL Configuration*:
 
-- **Site URL**: `https://<your-site>.netlify.app`
+- **Site URL**: `https://walkie-talkie-prod.netlify.app`
 - **Redirect URLs** — add both:
   ```
-  https://<your-site>.netlify.app/auth/callback
+  https://walkie-talkie-prod.netlify.app/auth/callback
   http://localhost:3000/auth/callback
   ```
 
