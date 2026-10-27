@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const g = await guard(
     request,
     adminRoomActionSchema,
-    { bucket: "admin.rooms", max: 60, windowS: 60 },
+    { bucket: "admin.rooms", max: 60, windowS: 60, failClosed: true },
     { staff: "moderator" },
   );
   if (!g.ok) return g.response;

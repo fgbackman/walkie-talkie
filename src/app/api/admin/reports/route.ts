@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   const g = await guard(
     request,
     resolveReportSchema,
-    { bucket: "admin.reports", max: 120, windowS: 60 },
+    { bucket: "admin.reports", max: 120, windowS: 60, failClosed: true },
     { staff: "moderator" },
   );
   if (!g.ok) return g.response;

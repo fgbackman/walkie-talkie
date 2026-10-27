@@ -13,9 +13,9 @@ import { serverEnv } from "@/lib/env";
  *   2. Never return raw rows from it to a client without filtering.
  *   3. Every call site must have already checked authorisation itself.
  *
- * It exists for exactly two jobs: the rate limiter (src/lib/ratelimit.ts)
- * and appending to the audit log (src/lib/audit.ts), which the API roles
- * cannot write to.
+ * It exists for exactly three jobs: the rate limiter (src/lib/ratelimit.ts),
+ * appending to the audit log (src/lib/audit.ts), which the API roles cannot
+ * write to, and deleting an account (src/lib/account.ts).
  */
 export function supabaseAdmin() {
   if (typeof window !== "undefined") {

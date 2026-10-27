@@ -24,6 +24,13 @@ enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
 enable_signup = true
 
+# Server-side session limits (hosted projects: Authentication -> Sessions;
+# needs a paid plan). The app also signs out after 7 idle days on its own
+# (src/lib/session.ts), so this is the second layer, not the only one.
+[auth.sessions]
+timebox = "720h"
+inactivity_timeout = "168h"
+
 [auth.email]
 enable_signup = true
 enable_confirmations = true

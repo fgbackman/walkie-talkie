@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import PrivacyForm from "./PrivacyForm";
+import DeleteAccount from "./DeleteAccount";
 
 export const metadata: Metadata = { title: "Privacy" };
 export const dynamic = "force-dynamic";
@@ -18,8 +19,9 @@ export default async function PrivacyPage() {
       </h1>
       <p className="mb-6 text-sm text-[var(--ink-3)]">
         Your GPS points are readable by you and nobody else — not other
-        walkers, not moderators, not admins. These settings control what gets
-        derived from them.
+        walkers, not moderators, not admins — and are deleted 90 days after
+        each walk. Distance, time and splits stay. These settings control what
+        gets derived from them.
       </p>
       <PrivacyForm
         initial={{
@@ -28,6 +30,7 @@ export default async function PrivacyPage() {
           consentRecording: session.profile.consent_recording,
         }}
       />
+      <DeleteAccount />
     </main>
   );
 }

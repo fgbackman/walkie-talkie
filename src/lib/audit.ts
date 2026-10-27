@@ -14,7 +14,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
  * Keep metadata free of emails, tokens and free-text PII.
  */
 export async function audit(entry: {
-  actorId: string;
+  /** null only for events whose actor no longer exists (account deletion). */
+  actorId: string | null;
   action: string;
   targetType?: string | null;
   targetId?: string | null;

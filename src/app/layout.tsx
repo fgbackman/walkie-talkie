@@ -1,6 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+// Every page renders per request so it can carry that request's CSP nonce
+// (set in middleware). A prerendered page would ship scripts with no nonce,
+// which the policy blocks.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: { default: "Walkie Talkie", template: "%s · Walkie Talkie" },
   description:
