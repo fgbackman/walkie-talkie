@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     .select("id,started_at,visibility")
     .single();
 
-  if (error || !data) return fail(400, error?.message ?? "Could not start the walk.");
+  if (error || !data) return fail(400, "Could not start the walk.");
 
   if (g.body.roomId) {
     await supabase

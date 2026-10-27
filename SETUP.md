@@ -88,8 +88,16 @@ A custom domain later changes the same three values and nothing else.
 *SQL Editor* → *New query* → paste the whole of
 **`supabase/_all_migrations.sql`** → *Run*.
 
-That is all eight migrations concatenated in order. It should finish with
-`Success. No rows returned`.
+That is every migration concatenated in order (`npm run db:bundle`
+regenerates it). It should finish with `Success. No rows returned`.
+
+**Already deployed?** Don't paste the bundle again; it will fail partway
+through. Paste only the migrations your project hasn't run yet, oldest
+first, from `supabase/migrations/`. For projects set up before 2026-10-27,
+that's `20261027000100_security_hardening.sql`. It replaces handles that were
+derived from email addresses with random `walker-…` handles, and makes
+staff powers require two-step verification. If you use the Supabase CLI,
+`npm run db:push` applies only what's missing.
 
 Then verify RLS is actually on:
 
@@ -210,8 +218,9 @@ Then walk the app:
 - [ ] `/login` renders, Google button appears
 - [ ] Google sign-in lands you back on `/` as a signed-in user
 - [ ] `/me` shows your handle; your role is admin (you seeded it in step 2)
-- [ ] `/admin` loads — it should first send you to `/auth/mfa` only once you
-      have a TOTP factor
+- [ ] `/admin` first sends you to `/settings/security` to set up an
+      authenticator. Staff accounts can't use the console without one. After
+      enrolling, `/admin` asks for a code, then loads
 - [ ] `/settings/security` → enrol an authenticator, then sign out and back in;
       you should be challenged for a code
 - [ ] `/rooms/new` → open a channel → allow the microphone → hold the talk bar;

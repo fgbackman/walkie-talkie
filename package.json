@@ -13,9 +13,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:rls": "vitest run tests/rls.test.ts",
+    "test:db": "bash scripts/db-test.sh",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "db:types": "supabase gen types typescript --local > src/types/database.ts",
+    "db:bundle": "node scripts/bundle-migrations.mjs",
     "audit": "npm audit --omit=dev --audit-level=high",
     "secrets:scan": "node scripts/scan-secrets.mjs"
   },
@@ -26,10 +28,10 @@
     "@supabase/supabase-js": "^2.58.0",
     "livekit-client": "^2.15.9",
     "livekit-server-sdk": "^2.13.4",
-    "next": "^15.5.27",
+    "next": "^15.5.28",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
@@ -39,7 +41,7 @@
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "eslint": "^9.36.0",
-    "eslint-config-next": "^15.5.27",
+    "eslint-config-next": "^15.5.28",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
     "vitest": "^5.0.3"

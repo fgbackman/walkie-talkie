@@ -53,7 +53,7 @@ export async function PATCH(request: Request) {
 
   const supabase = await supabaseServer();
   const { error } = await supabase.from("profiles").update(patch).eq("id", user.id);
-  if (error) return fail(400, error.message);
+  if (error) return fail(400, "Could not save that.");
 
   return json({ ok: true });
 }

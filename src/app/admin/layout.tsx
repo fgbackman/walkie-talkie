@@ -1,7 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { requireModerator, hasAal2 } from "@/lib/auth";
-import { supabaseServer } from "@/lib/supabase/server";
+import { requireModerator } from "@/lib/auth";
 
 const NAV = [
   { href: "/admin", label: "Overview" },
@@ -14,19 +12,12 @@ const NAV = [
 export default async function AdminLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const session = await requireModerator();
-
   /**
-   * Middleware already gates /admin on AAL2, but a layout that trusts
-   * middleware alone breaks silently the day someone edits the matcher.
-   * If the account has a TOTP factor enrolled, the session must have used it.
+   * requireModerator demands a second factor used this session — staff
+   * without an authenticator are sent to enrol one. Every admin page and
+   * admin API route checks again itself; this layout is not the control.
    */
-  const supabase = await supabaseServer();
-  const { data: factors } = await supabase.auth.mfa.listFactors();
-  const hasFactor = (factors?.totp ?? []).some((f) => f.status === "verified");
-  if (hasFactor && !(await hasAal2())) {
-    redirect("/auth/mfa?next=/admin");
-  }
+  const session = await requireModerator();
 
   return (
     <div className="mx-auto min-h-dvh w-full max-w-5xl px-5 py-6">
@@ -41,14 +32,6 @@ export default async function AdminLayout({
         <span className="wt-label rounded border border-[var(--line)] px-2 py-0.5">
           {session.profile.role}
         </span>
-        {!hasFactor && (
-          <Link
-            href="/settings/security"
-            className="rounded-lg bg-[var(--signal-ghost)] px-2.5 py-1 text-xs text-[var(--signal)]"
-          >
-            Set up two-step verification
-          </Link>
-        )}
         <nav className="ml-auto flex flex-wrap gap-1">
           {NAV.map((n) => (
             <Link

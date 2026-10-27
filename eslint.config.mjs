@@ -33,7 +33,7 @@ export default [
             {
               group: ["**/supabase/admin", "@/lib/supabase/admin"],
               message:
-                "supabaseAdmin bypasses Row Level Security. Use it only in server-only modules (src/lib/ratelimit.ts, src/lib/livekit.ts) or a route handler that has already checked authorisation.",
+                "supabaseAdmin bypasses Row Level Security. Use it only in the server-only modules src/lib/ratelimit.ts and src/lib/audit.ts.",
             },
           ],
         },

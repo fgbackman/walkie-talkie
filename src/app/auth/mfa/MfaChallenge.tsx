@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { safeNext } from "@/lib/safe-redirect";
 
 export default function MfaChallenge() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") ?? "/";
+  const next = safeNext(params.get("next"));
   const [factorId, setFactorId] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -19,7 +20,7 @@ export default function MfaChallenge() {
       const { data, error } = await supabaseBrowser().auth.mfa.listFactors();
       if (cancelled) return;
       if (error) return setError(error.message);
-      const totp = data?.totp?.[0];
+      const totp = data?.totp?.find((f) => f.status === "verified");
       if (!totp) {
         // No factor enrolled — nothing to challenge.
         router.replace(next);

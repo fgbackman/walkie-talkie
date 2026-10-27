@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { guard, json, fail } from "@/lib/api";
 import { createRoomSchema } from "@/lib/validation";
 import { supabaseServer } from "@/lib/supabase/server";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -51,19 +52,22 @@ export async function POST(request: Request) {
     .select("id,title,livekit_room")
     .single();
 
-  if (error || !data) return fail(400, error?.message ?? "Could not open the channel.");
+  if (error || !data) return fail(400, "Could not open the channel.");
 
-  await supabase.from("room_participants").insert({
+  // The database only honours role "host" for the room's own host.
+  const { error: seatError } = await supabase.from("room_participants").insert({
     room_id: data.id,
     user_id: g.user.id,
     role: "host",
   });
+  if (seatError) return fail(400, "Could not open the channel.");
 
-  await supabase.rpc("log_audit", {
-    p_action: "room.create",
-    p_target_type: "room",
-    p_target_id: data.id,
-    p_metadata: { title: data.title },
+  await audit({
+    actorId: g.user.id,
+    action: "room.create",
+    targetType: "room",
+    targetId: data.id,
+    metadata: { title: data.title },
   });
 
   return json({ room: data }, { status: 201 });

@@ -1,6 +1,7 @@
 import { guard, json, fail } from "@/lib/api";
 import { adminUserActionSchema } from "@/lib/validation";
 import { supabaseServer } from "@/lib/supabase/server";
+import { audit } from "@/lib/audit";
 import type { Profile } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -10,20 +11,18 @@ type ProfilePatch = Partial<
 >;
 
 /**
- * Account actions. Admin only — the database trigger enforces this too, so
- * a missing check here fails closed rather than open.
+ * Account actions. Admin only, with a second factor this session — the
+ * database trigger enforces both too (is_admin() is false below aal2), so a
+ * missing check here fails closed rather than open.
  */
 export async function POST(request: Request) {
-  const g = await guard(request, adminUserActionSchema, {
-    bucket: "admin.users",
-    max: 120,
-    windowS: 60,
-  });
+  const g = await guard(
+    request,
+    adminUserActionSchema,
+    { bucket: "admin.users", max: 120, windowS: 60 },
+    { staff: "admin" },
+  );
   if (!g.ok) return g.response;
-
-  if (g.user.profile.role !== "admin") {
-    return fail(403, "Admin only.");
-  }
   if (g.body.userId === g.user.id) {
     return fail(400, "You can't action your own account.");
   }
@@ -55,18 +54,21 @@ export async function POST(request: Request) {
       break;
   }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("profiles")
     .update(patch)
-    .eq("id", g.body.userId);
+    .eq("id", g.body.userId)
+    .select("id");
 
-  if (error) return fail(400, error.message);
+  if (error) return fail(400, "Could not apply that.");
+  if (!updated?.length) return fail(404, "No such account.");
 
-  await supabase.rpc("log_audit", {
-    p_action: `admin.${g.body.action}`,
-    p_target_type: "user",
-    p_target_id: g.body.userId,
-    p_metadata: { reason: g.body.reason, days: g.body.days ?? null },
+  await audit({
+    actorId: g.user.id,
+    action: `admin.${g.body.action}`,
+    targetType: "user",
+    targetId: g.body.userId,
+    metadata: { reason: g.body.reason, days: g.body.days ?? null },
   });
 
   return json({ ok: true });

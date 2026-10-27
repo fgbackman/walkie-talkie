@@ -60,6 +60,7 @@ export type RoomParticipant = {
   muted_by_host: boolean;
   joined_at: string;
   left_at: string | null;
+  removed_at: string | null;
 };
 
 export type Walk = {
@@ -183,14 +184,20 @@ export type Database = {
         Args: { p_bucket: string; p_limit: number; p_window_s: number };
         Returns: boolean;
       };
-      log_audit: {
-        Args: {
-          p_action: string;
-          p_target_type?: string;
-          p_target_id?: string;
-          p_metadata?: Record<string, unknown>;
-        };
-        Returns: undefined;
+      get_my_profile: { Args: Record<string, never>; Returns: Profile[] };
+      staff_list_profiles: {
+        Args: { p_query?: string | null };
+        Returns: Pick<
+          Profile,
+          | "id"
+          | "handle"
+          | "display_name"
+          | "avatar_url"
+          | "role"
+          | "banned_at"
+          | "suspended_until"
+          | "created_at"
+        >[];
       };
     };
     Enums: {

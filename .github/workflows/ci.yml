@@ -53,6 +53,38 @@ jobs:
       - name: Scan the build for leaked secrets
         run: npm run secrets:scan
 
+  # Applies every migration to a real Postgres and attacks it as anon, a
+  # signed-in stranger, a host, and staff with and without a second factor.
+  # This is where an RLS or grant regression gets caught.
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Migrations + authorisation tests
+        run: npm run test:db
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+      - name: Bundled migrations are up to date
+        run: |
+          node scripts/bundle-migrations.mjs
+          git diff --quiet -I '^-- Generated ' -- supabase/_all_migrations.sql \
+            || { echo "Run npm run db:bundle and commit the result."; exit 1; }
+
   # CodeQL needs GitHub Advanced Security on a private repo. It runs
   # automatically if this repo is ever made public; until then the `verify`
   # job above is the gate.
