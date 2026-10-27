@@ -148,8 +148,34 @@ $$;
 -- Statement-level so it also refuses TRUNCATE, which row triggers never see.
 drop trigger if exists audit_log_append_only on public.audit_log;
 create trigger audit_log_append_only
-  before update or delete or truncate on public.audit_log
+  before delete or truncate on public.audit_log
   for each statement execute function public.audit_log_append_only();
+
+-- Rows are never rewritten, with one exception: when an account is deleted,
+-- the foreign key's ON DELETE SET NULL clears actor_id. Refusing that would
+-- make every user who ever appeared in the log undeletable.
+create or replace function public.audit_log_no_rewrite()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.actor_id is null
+     and old.actor_id is not null
+     and (new.id, new.action, new.target_type, new.target_id, new.metadata, new.created_at)
+         is not distinct from
+         (old.id, old.action, old.target_type, old.target_id, old.metadata, old.created_at)
+  then
+    return new;
+  end if;
+  raise exception 'audit_log is append-only' using errcode = '42501';
+end;
+$$;
+
+drop trigger if exists audit_log_no_rewrite on public.audit_log;
+create trigger audit_log_no_rewrite
+  before update on public.audit_log
+  for each row execute function public.audit_log_no_rewrite();
 
 
 -- --- 5. Rooms: protected columns and recording consent --------------------

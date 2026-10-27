@@ -286,6 +286,16 @@ reset role;
 select tests.throws('delete from public.audit_log', 'even the platform cannot delete audit rows');
 select tests.throws('truncate public.audit_log', 'or truncate them');
 select tests.throws($q$update public.audit_log set action = 'x'$q$, 'or rewrite them');
+select tests.throws($q$update public.audit_log set actor_id = null, action = 'x'$q$,
+  'or rewrite them while clearing the actor');
+
+-- Deleting an account clears its actor id instead of failing.
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000de1e7', 'gone@example.com');
+insert into public.audit_log (actor_id, action) values ('00000000-0000-4000-8000-0000000de1e7', 'room.create');
+delete from auth.users where id = '00000000-0000-4000-8000-0000000de1e7';
+select tests.ok(
+  exists (select 1 from public.audit_log where action = 'room.create' and actor_id is null),
+  'deleting an account keeps its audit rows and clears the actor');
 
 -- ===========================================================================
 -- Function execution
