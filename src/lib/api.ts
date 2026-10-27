@@ -27,7 +27,7 @@ export function fail(status: number, message: string, extra?: Record<string, unk
 export async function guard<S extends ZodTypeAny>(
   request: Request,
   schema: S,
-  limit: { bucket: string; max: number; windowS: number },
+  limit: { bucket: string; max: number; windowS: number; failClosed?: boolean },
   options: { staff?: "moderator" | "admin" } = {},
 ): Promise<
   | { ok: true; user: ApiUser; body: TypeOf<S> }
@@ -42,16 +42,18 @@ export async function guard<S extends ZodTypeAny>(
   }
 
   const ip = clientIp(request.headers);
-  const byUser = await rateLimit(`${limit.bucket}:u:${user.id}`, limit.max, limit.windowS);
-  const byIp = await rateLimit(`${limit.bucket}:i:${ip}`, limit.max * 3, limit.windowS);
+  const opts = { failClosed: limit.failClosed };
+  const byUser = await rateLimit(`${limit.bucket}:u:${user.id}`, limit.max, limit.windowS, opts);
+  const byIp = await rateLimit(`${limit.bucket}:i:${ip}`, limit.max * 3, limit.windowS, opts);
 
   if (!byUser.ok || !byIp.ok) {
     const retry = (!byUser.ok ? byUser.retryAfter : 0) || (!byIp.ok ? byIp.retryAfter : 0);
+    const unavailable = (!byUser.ok && byUser.unavailable) || (!byIp.ok && byIp.unavailable);
     return {
       ok: false,
       response: NextResponse.json(
-        { error: "Slow down a moment." },
-        { status: 429, headers: { "Retry-After": String(retry) } },
+        { error: unavailable ? "Try again in a moment." : "Slow down a moment." },
+        { status: unavailable ? 503 : 429, headers: { "Retry-After": String(retry) } },
       ),
     };
   }

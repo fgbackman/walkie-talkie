@@ -326,6 +326,48 @@ select tests.ok((select count(*) from public.walks
                  where id = '00000000-0000-4000-8000-0000000000b1') = 0,
   'another user cannot read a private walk');
 
+-- ===========================================================================
+-- GPS retention
+-- ===========================================================================
+select tests.throws('select public.prune_walk_points()',
+  'users cannot run the retention job');
+
 reset role;
+select tests.logout();
+insert into public.walks (id, user_id, started_at, ended_at) values
+  ('00000000-0000-4000-8000-0000000000c1', :bob, now() - interval '100 days', now() - interval '100 days'),
+  ('00000000-0000-4000-8000-0000000000c2', :bob, now() - interval '100 days', null),
+  ('00000000-0000-4000-8000-0000000000c3', :bob, now() - interval '10 days',  now() - interval '10 days');
+insert into public.walk_points (walk_id, t, lat, lng) values
+  ('00000000-0000-4000-8000-0000000000c1', now(), 1, 1),
+  ('00000000-0000-4000-8000-0000000000c2', now(), 1, 1),
+  ('00000000-0000-4000-8000-0000000000c3', now(), 1, 1);
+select public.prune_walk_points();
+select tests.ok(
+  (select count(*) from public.walk_points where walk_id in
+     ('00000000-0000-4000-8000-0000000000c1', '00000000-0000-4000-8000-0000000000c2')) = 0,
+  'points from walks older than 90 days (finished or abandoned) are deleted');
+select tests.ok(
+  (select count(*) from public.walk_points where walk_id = '00000000-0000-4000-8000-0000000000c3') = 1
+  and exists (select 1 from public.walks where id = '00000000-0000-4000-8000-0000000000c1'),
+  'recent points stay, and old walks keep their summary row');
+
+-- ===========================================================================
+-- Account deletion
+-- ===========================================================================
+-- The moderator closed Alice's room earlier, so rooms.closed_by points at them.
+delete from auth.users where id = :mod;
+select tests.ok((tests.room(:room)).closed_by is null,
+  'a moderator who closed a room can still be deleted');
+
+delete from auth.users where id = :alice;
+select tests.ok(
+  not exists (select 1 from public.profiles where id = :alice)
+  and not exists (select 1 from public.walks where user_id = :alice)
+  and not exists (select 1 from public.walk_points where walk_id = '00000000-0000-4000-8000-0000000000b1')
+  and not exists (select 1 from public.rooms where host_id = :alice)
+  and not exists (select 1 from public.room_participants where user_id = :alice),
+  'deleting an account removes its profile, walks, GPS points, rooms and seats');
+
 \o
 \echo 'all security tests passed'

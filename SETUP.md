@@ -94,9 +94,12 @@ regenerates it). It should finish with `Success. No rows returned`.
 **Already deployed?** Don't paste the bundle again; it will fail partway
 through. Paste only the migrations your project hasn't run yet, oldest
 first, from `supabase/migrations/`. For projects set up before 2026-10-27,
-that's `20261027000100_security_hardening.sql`. It replaces handles that were
-derived from email addresses with random `walker-…` handles, and makes
-staff powers require two-step verification. If you use the Supabase CLI,
+that's `20261027000100_security_hardening.sql`, then
+`20261027000200_privacy_retention.sql`. The first replaces handles that were
+derived from email addresses with random `walker-…` handles, and makes staff
+powers require two-step verification. The second makes accounts deletable,
+deletes raw GPS points 90 days after each walk, and schedules that clean-up
+with pg_cron (*Database* → *Extensions* lists it as enabled afterwards). If you use the Supabase CLI,
 `npm run db:push` applies only what's missing.
 
 Then verify RLS is actually on:
@@ -124,6 +127,10 @@ to admin, deletes the bootstrap row, and writes an audit entry. It is
 one-shot: it cannot be replayed to re-promote a demoted account.
 
 ### Tighten auth settings
+
+*Authentication* → *Sessions* (paid plans): set **Time-box user sessions**
+to 30 days and **Inactivity timeout** to 7 days. The app signs idle sessions
+out after 7 days on its own, so this is a second layer.
 
 *Authentication* → *Sign In / Providers* → *Email*: confirm **Confirm email**
 is on.

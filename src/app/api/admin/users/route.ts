@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const g = await guard(
     request,
     adminUserActionSchema,
-    { bucket: "admin.users", max: 120, windowS: 60 },
+    { bucket: "admin.users", max: 120, windowS: 60, failClosed: true },
     { staff: "admin" },
   );
   if (!g.ok) return g.response;

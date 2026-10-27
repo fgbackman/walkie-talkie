@@ -3,6 +3,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import type { Profile, UserRole } from "@/types/database";
+import { latestAuthAt, RECENT_AUTH_S, STAFF_REVERIFY_S } from "@/lib/session";
 
 export type SessionUser = { id: string; email: string | null; profile: Profile };
 
@@ -39,9 +40,10 @@ function isStaffRole(role: UserRole, level: "moderator" | "admin") {
 }
 
 /**
- * Staff areas demand a second factor, always. No verified authenticator:
- * go and enrol one. One enrolled but not used this session: step up.
- * The database agrees — is_admin()/is_moderator() return false below aal2.
+ * Staff areas demand a second factor, always, entered within the last
+ * STAFF_REVERIFY_S. No verified authenticator: go and enrol one. One
+ * enrolled but not used recently: step up. The database agrees —
+ * is_admin()/is_moderator() return false below aal2.
  */
 async function requireStaff(level: "moderator" | "admin", next: string): Promise<SessionUser> {
   const session = await requireUser(next);
@@ -49,15 +51,33 @@ async function requireStaff(level: "moderator" | "admin", next: string): Promise
     redirect("/auth/error?reason=forbidden");
   }
 
+  const state = await staffFactorState();
+  if (state === "no-factor") redirect("/settings/security?required=staff");
+  if (state === "stale") redirect(`/auth/mfa?next=${encodeURIComponent(next)}`);
+  return session;
+}
+
+/** Whether this session's second factor is good enough for staff work. */
+async function staffFactorState(): Promise<"ok" | "stale" | "no-factor"> {
   const supabase = await supabaseServer();
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (aal?.currentLevel !== "aal2") {
-    if (aal?.nextLevel === "aal2") {
-      redirect(`/auth/mfa?next=${encodeURIComponent(next)}`);
-    }
-    redirect("/settings/security?required=staff");
+    return aal?.nextLevel === "aal2" ? "stale" : "no-factor";
   }
-  return session;
+  const totpAt = latestAuthAt(aal.currentAuthenticationMethods, "totp");
+  const nowS = Math.floor(Date.now() / 1000);
+  return totpAt !== null && nowS - totpAt <= STAFF_REVERIFY_S ? "ok" : "stale";
+}
+
+/**
+ * For irreversible actions: did this session sign in, or pass a TOTP check,
+ * within RECENT_AUTH_S? A stolen long-lived cookie alone is not enough.
+ */
+export async function hasRecentAuth(): Promise<boolean> {
+  const supabase = await supabaseServer();
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  const at = latestAuthAt(aal?.currentAuthenticationMethods);
+  return at !== null && Math.floor(Date.now() / 1000) - at <= RECENT_AUTH_S;
 }
 
 /** As requireUser, but also demands moderator or admin, with a second factor. */
@@ -101,11 +121,15 @@ export async function apiStaffCheck(
   if (!isStaffRole(role, level)) {
     return { ok: false, status: 403, message: level === "admin" ? "Admin only." : "Staff only." };
   }
-  if (!(await hasAal2())) {
+  const state = await staffFactorState();
+  if (state !== "ok") {
     return {
       ok: false,
       status: 403,
-      message: "Verify with your authenticator app first.",
+      message:
+        state === "no-factor"
+          ? "Set up two-step verification first."
+          : "Verify with your authenticator app first.",
     };
   }
   return { ok: true };

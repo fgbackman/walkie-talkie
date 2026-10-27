@@ -23,9 +23,11 @@ the room with you.
 | Service-role key leaking to the browser | Key read only inside `src/lib/supabase/admin.ts`, which throws if imported in a client bundle; CI greps the build output for the key prefix |
 | Token forgery for a room | LiveKit tokens minted server-side only, scoped to one room, 2-hour TTL, `canPublish` decided by DB membership |
 | Room flooding / scraping | Per-user + per-IP rate limits on every mutating route |
-| XSS | React escaping, no `dangerouslySetInnerHTML` anywhere, CSP with no third-party script origins (still allows inline scripts — see open items) |
+| XSS | React escaping, no `dangerouslySetInnerHTML` anywhere, and a per-request nonce CSP (`src/lib/csp.ts`, set in middleware): only scripts carrying the nonce run, so injected `<script>` tags and inline handlers are blocked. Styles still allow inline |
 | Open redirect | Every `next=` goes through `safeNext()` (`src/lib/safe-redirect.ts`): same-site paths only |
-| CSRF | Supabase cookies are `SameSite=Lax`; all mutations are POST through route handlers that verify the session server-side |
+| CSRF | Supabase cookies are `SameSite=Lax`; all mutations are POST/PATCH/DELETE through route handlers that verify the session server-side |
+| Stolen or abandoned session | Signed out after 7 days without activity (middleware, HttpOnly `wt_seen` cookie); auth cookies capped at 30 days and `Secure` in production; staff re-enter a TOTP code every 12 hours; deleting the account needs a sign-in within 30 minutes |
+| Location history held forever | Raw GPS points deleted 90 days after a walk (`prune_walk_points`, scheduled with pg_cron); summaries kept. Users can delete their account and everything in it from Settings, then Privacy |
 | Recording without consent | `recording_enabled` can only be switched on by the host when `room_can_record()` is true; it switches itself off if a non-consenting speaker is promoted or a speaker withdraws consent (`guard_room`, `enforce_recording_consent`) |
 
 ## Pre-release checklist
@@ -66,17 +68,14 @@ releases. Remove those overrides once Next ships them itself.
 
 Not yet fixed; tracked here so they aren't forgotten.
 
-- CSP allows `'unsafe-inline'` scripts. Move to per-request nonces in
-  middleware.
-- Session cookies use `@supabase/ssr` defaults (not HttpOnly, about 400-day
-  lifetime). Configure a session time-box and inactivity timeout in Supabase
-  Auth. HttpOnly would need the browser client's direct table calls moved
-  behind route handlers.
-- The rate limiter lets requests through when the database errors.
-- Precise GPS history has no retention limit, and account deletion
-  (promised on the login page) isn't built.
-- Google sign-in requests `access_type=offline` + `prompt=consent`, which the
-  app doesn't need.
+- Supabase auth cookies are still not HttpOnly: the browser client reads
+  them for realtime, hand-raising and the MFA screens. Making them HttpOnly
+  means moving those calls behind route handlers.
+- Supabase's own session time-box and inactivity timeout (Authentication ->
+  Sessions) need a paid plan. The app enforces a 7-day idle sign-out itself
+  in the meantime.
+- The rate limiter still lets everyday routes through when its database
+  errors. Staff actions, media tokens and account deletion now block instead.
 - No SAST in CI for this private repo (CodeQL needs Advanced Security).
 - Incident response: name a contact and write the containment and key
   rotation runbook.

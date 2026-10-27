@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/database";
 import { publicEnv } from "@/lib/env";
+import { authCookieOptions } from "@/lib/session";
 
 /**
  * Request-scoped client carrying the signed-in user's session.
@@ -16,6 +17,7 @@ export async function supabaseServer() {
     publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
+      cookieOptions: authCookieOptions,
       cookies: {
         getAll() {
           return store.getAll();

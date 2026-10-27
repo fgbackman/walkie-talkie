@@ -3,6 +3,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "@/types/database";
 import { publicEnv } from "@/lib/env";
+import { authCookieOptions } from "@/lib/session";
 
 let cached: ReturnType<typeof createBrowserClient<Database>> | null = null;
 
@@ -11,6 +12,7 @@ export function supabaseBrowser() {
   cached ??= createBrowserClient<Database>(
     publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    { cookieOptions: authCookieOptions },
   );
   return cached;
 }

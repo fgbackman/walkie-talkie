@@ -9,6 +9,13 @@ import { safeNext } from "@/lib/safe-redirect";
 export default function LoginForm() {
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
+  const reason = params.get("reason");
+  const notice =
+    reason === "idle"
+      ? "You were signed out after a week without activity. Sign in to carry on."
+      : reason === "deleted"
+        ? "Your account and everything in it has been deleted."
+        : null;
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -21,10 +28,9 @@ export default function LoginForm() {
     setBusy(true);
     const { error } = await supabaseBrowser().auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo,
-        queryParams: { access_type: "offline", prompt: "consent" },
-      },
+      // No access_type=offline: the app never calls Google APIs, so it
+      // should not ask Google for a long-lived refresh token.
+      options: { redirectTo },
     });
     if (error) {
       setError(error.message);
@@ -64,6 +70,11 @@ export default function LoginForm() {
 
   return (
     <div className="flex flex-col gap-4">
+      {notice && (
+        <p role="status" className="rounded-xl bg-[var(--card-2)] p-3 text-sm text-[var(--ink-2)]">
+          {notice}
+        </p>
+      )}
       <button
         type="button"
         onClick={google}

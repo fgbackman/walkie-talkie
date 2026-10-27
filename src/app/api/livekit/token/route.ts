@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     bucket: "livekit.token",
     max: 20,
     windowS: 60,
+    failClosed: true,
   });
   if (!g.ok) return g.response;
 

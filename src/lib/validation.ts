@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DELETE_ACCOUNT_PHRASE } from "@/lib/delete-phrase";
 
 /**
  * One schema per mutating endpoint. Nothing reaches the database without
@@ -106,4 +107,8 @@ export const profileUpdateSchema = z.object({
   fuzzEndpoints: z.boolean().optional(),
   consentRecording: z.boolean().optional(),
   weeklyGoalM: z.number().int().min(0).max(1000000).optional(),
+});
+
+export const deleteAccountSchema = z.object({
+  confirm: z.literal(DELETE_ACCOUNT_PHRASE),
 });
