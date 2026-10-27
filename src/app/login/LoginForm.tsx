@@ -4,10 +4,11 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { publicEnv } from "@/lib/env";
+import { safeNext } from "@/lib/safe-redirect";
 
 export default function LoginForm() {
   const params = useSearchParams();
-  const next = params.get("next") ?? "/";
+  const next = safeNext(params.get("next"));
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);

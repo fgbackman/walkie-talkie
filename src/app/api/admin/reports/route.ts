@@ -1,19 +1,18 @@
 import { guard, json, fail } from "@/lib/api";
 import { resolveReportSchema } from "@/lib/validation";
 import { supabaseServer } from "@/lib/supabase/server";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const g = await guard(request, resolveReportSchema, {
-    bucket: "admin.reports",
-    max: 120,
-    windowS: 60,
-  });
+  const g = await guard(
+    request,
+    resolveReportSchema,
+    { bucket: "admin.reports", max: 120, windowS: 60 },
+    { staff: "moderator" },
+  );
   if (!g.ok) return g.response;
-
-  const role = g.user.profile.role;
-  if (role !== "admin" && role !== "moderator") return fail(403, "Staff only.");
 
   const supabase = await supabaseServer();
   const { error } = await supabase
@@ -26,13 +25,14 @@ export async function POST(request: Request) {
     })
     .eq("id", g.body.reportId);
 
-  if (error) return fail(400, error.message);
+  if (error) return fail(400, "Could not update that report.");
 
-  await supabase.rpc("log_audit", {
-    p_action: `report.${g.body.status}`,
-    p_target_type: "report",
-    p_target_id: g.body.reportId,
-    p_metadata: { resolution: g.body.resolution },
+  await audit({
+    actorId: g.user.id,
+    action: `report.${g.body.status}`,
+    targetType: "report",
+    targetId: g.body.reportId,
+    metadata: { resolution: g.body.resolution },
   });
 
   return json({ ok: true });

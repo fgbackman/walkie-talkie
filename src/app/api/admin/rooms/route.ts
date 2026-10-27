@@ -2,19 +2,18 @@ import { guard, json, fail } from "@/lib/api";
 import { adminRoomActionSchema } from "@/lib/validation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { closeRoom } from "@/lib/livekit";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const g = await guard(request, adminRoomActionSchema, {
-    bucket: "admin.rooms",
-    max: 60,
-    windowS: 60,
-  });
+  const g = await guard(
+    request,
+    adminRoomActionSchema,
+    { bucket: "admin.rooms", max: 60, windowS: 60 },
+    { staff: "moderator" },
+  );
   if (!g.ok) return g.response;
-
-  const role = g.user.profile.role;
-  if (role !== "admin" && role !== "moderator") return fail(403, "Staff only.");
 
   const supabase = await supabaseServer();
   const { data: room } = await supabase
@@ -56,11 +55,12 @@ export async function POST(request: Request) {
       .eq("id", room.id);
   }
 
-  await supabase.rpc("log_audit", {
-    p_action: `admin.room.${g.body.action}`,
-    p_target_type: "room",
-    p_target_id: room.id,
-    p_metadata: { reason: g.body.reason, title: room.title },
+  await audit({
+    actorId: g.user.id,
+    action: `admin.room.${g.body.action}`,
+    targetType: "room",
+    targetId: room.id,
+    metadata: { reason: g.body.reason, title: room.title },
   });
 
   return json({ ok: true });

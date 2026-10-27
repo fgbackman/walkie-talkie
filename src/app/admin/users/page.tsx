@@ -13,15 +13,11 @@ export default async function UsersPage({
   const { q } = await searchParams;
   const supabase = await supabaseServer();
 
-  let query = supabase
-    .from("profiles")
-    .select("id,handle,display_name,avatar_url,role,banned_at,suspended_until,created_at")
-    .order("created_at", { ascending: false })
-    .limit(100);
-
-  if (q) query = query.ilike("handle", `%${q}%`);
-
-  const { data: users } = await query;
+  // Moderation fields are not readable through the table; this RPC returns
+  // them only to staff with a second factor, and escapes % and _ in `q`.
+  const { data: users } = await supabase.rpc("staff_list_profiles", {
+    p_query: q?.trim().slice(0, 30) || null,
+  });
 
   return (
     <main>

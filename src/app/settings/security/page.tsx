@@ -5,8 +5,14 @@ import MfaSetup from "./MfaSetup";
 export const metadata: Metadata = { title: "Security" };
 export const dynamic = "force-dynamic";
 
-export default async function SecurityPage() {
-  await requireUser("/settings/security");
+export default async function SecurityPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ required?: string }>;
+}) {
+  const session = await requireUser("/settings/security");
+  const { required } = await searchParams;
+  const isStaff = session.profile.role === "admin" || session.profile.role === "moderator";
 
   return (
     <main>
@@ -20,6 +26,15 @@ export default async function SecurityPage() {
         Two-step verification means a stolen password or a hijacked email inbox
         isn’t enough to get into your account.
       </p>
+      {isStaff && required === "staff" && (
+        <p
+          role="alert"
+          className="mb-5 rounded-xl bg-[var(--signal-ghost)] p-3 text-sm text-[var(--signal)]"
+        >
+          The admin console needs two-step verification. Turn it on below,
+          then open the console again.
+        </p>
+      )}
       <MfaSetup />
     </main>
   );

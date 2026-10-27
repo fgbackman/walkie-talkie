@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { ZodError, type TypeOf, type ZodTypeAny } from "zod";
-import { getApiUser } from "@/lib/auth";
+import { apiStaffCheck, getApiUser } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/ratelimit";
 
 export type ApiUser = NonNullable<Awaited<ReturnType<typeof getApiUser>>>;
@@ -16,7 +16,8 @@ export function fail(status: number, message: string, extra?: Record<string, unk
 }
 
 /**
- * Every mutating route goes through this: authenticate, rate limit, parse.
+ * Every mutating route goes through this: authenticate, (for staff routes)
+ * check role and second factor, rate limit, parse.
  * Returning early with a typed failure keeps the handlers short enough to
  * audit at a glance.
  *
@@ -27,12 +28,18 @@ export async function guard<S extends ZodTypeAny>(
   request: Request,
   schema: S,
   limit: { bucket: string; max: number; windowS: number },
+  options: { staff?: "moderator" | "admin" } = {},
 ): Promise<
   | { ok: true; user: ApiUser; body: TypeOf<S> }
   | { ok: false; response: NextResponse }
 > {
   const user = await getApiUser();
   if (!user) return { ok: false, response: fail(401, "Sign in first.") };
+
+  if (options.staff) {
+    const staff = await apiStaffCheck(user.profile.role, options.staff);
+    if (!staff.ok) return { ok: false, response: fail(staff.status, staff.message) };
+  }
 
   const ip = clientIp(request.headers);
   const byUser = await rateLimit(`${limit.bucket}:u:${user.id}`, limit.max, limit.windowS);

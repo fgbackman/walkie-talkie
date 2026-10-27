@@ -11,7 +11,8 @@ async function countRows(
   filter?: { column: string; op: "eq" | "gte"; value: string | boolean },
 ) {
   const supabase = await supabaseServer();
-  const query = supabase.from(table).select("*", { count: "exact", head: true });
+  // "id", not "*": profiles only grants its public columns.
+  const query = supabase.from(table).select("id", { count: "exact", head: true });
   const finished =
     filter?.op === "eq"
       ? query.eq(filter.column, filter.value)

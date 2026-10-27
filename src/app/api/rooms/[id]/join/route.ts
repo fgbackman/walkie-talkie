@@ -30,10 +30,13 @@ export async function POST(
     return fail(409, "That channel is full.");
   }
 
+  // No role in the payload: a new seat is a listener (the database forces
+  // it), and rejoining keeps whatever role the host gave you. Someone the
+  // host removed is refused by the database.
   const { error } = await supabase
     .from("room_participants")
     .upsert(
-      { room_id: id, user_id: g.user.id, role: "listener", left_at: null },
+      { room_id: id, user_id: g.user.id, left_at: null },
       { onConflict: "room_id,user_id" },
     );
 
