@@ -327,6 +327,48 @@ select tests.ok((select count(*) from public.walks
   'another user cannot read a private walk');
 
 -- ===========================================================================
+-- Walk stats come from the server; tags are limited in the database
+-- ===========================================================================
+select tests.login(:bob);
+select tests.throws(
+  $q$insert into public.walks (user_id, distance_m) values ('00000000-0000-4000-8000-000000000b0b', 400000)$q$,
+  'a user cannot insert a walk with a claimed distance');
+select tests.throws(
+  $q$insert into public.walks (user_id, started_at) values ('00000000-0000-4000-8000-000000000b0b', now() - interval '1 day')$q$,
+  'a user cannot backdate a walk''s start');
+
+insert into public.walks (id, user_id, visibility)
+values ('00000000-0000-4000-8000-0000000000d1', :bob, 'private');
+select tests.throws(
+  $q$update public.walks set distance_m = 400000 where id = '00000000-0000-4000-8000-0000000000d1'$q$,
+  'a user cannot write a walk''s distance');
+
+update public.walks set ended_at = now() + interval '3 days'
+where id = '00000000-0000-4000-8000-0000000000d1';
+select tests.ok(
+  (select ended_at <= now() from public.walks where id = '00000000-0000-4000-8000-0000000000d1'),
+  'a future end time is clamped to now');
+select tests.throws(
+  $q$update public.walks set ended_at = null where id = '00000000-0000-4000-8000-0000000000d1'$q$,
+  'a finished walk cannot be reopened');
+select tests.ok(
+  (select (public.finalize_walk('00000000-0000-4000-8000-0000000000d1')).id is not null),
+  'finalize_walk() still works on a finished walk');
+
+select tests.throws(
+  $q$insert into public.posts (author_id, body, tags) values
+     ('00000000-0000-4000-8000-000000000b0b', 'hi', array['a','b','c','d','e','f','g','h','i'])$q$,
+  'a post cannot have more than 8 tags', '23514');
+select tests.throws(
+  $q$insert into public.posts (author_id, body, tags) values
+     ('00000000-0000-4000-8000-000000000b0b', 'hi', array[repeat('x', 25)])$q$,
+  'a tag cannot be longer than 24 characters', '23514');
+insert into public.posts (author_id, body, tags) values (:bob, 'Morning loop done', array['morning', 'zone 2']);
+select tests.ok(
+  (select count(*) from public.posts where author_id = :bob) = 1,
+  'a normal post with tags is accepted');
+
+-- ===========================================================================
 -- GPS retention
 -- ===========================================================================
 select tests.throws('select public.prune_walk_points()',

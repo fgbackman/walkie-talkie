@@ -26,8 +26,8 @@ export function buildCsp(nonce: string, opts: { dev?: boolean } = {}): string {
     "frame-ancestors 'none'",
     "form-action 'self'",
     "img-src 'self' data: blob: https://lh3.googleusercontent.com",
-    "font-src 'self' https://fonts.gstatic.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
     // React dev tooling evaluates code; production never gets 'unsafe-eval'.
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${opts.dev ? " 'unsafe-eval'" : ""}`,
     "worker-src 'self' blob:",

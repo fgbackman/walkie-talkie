@@ -39,11 +39,16 @@ export async function rateLimit(
   }
 }
 
-/** Client IP, trusting only the first hop Netlify sets. */
+/**
+ * Client IP for the per-IP limit.
+ *
+ * Only Netlify's own header is trusted: Netlify's edge sets it and overwrites
+ * any client-supplied copy. X-Forwarded-For is not used, because its first
+ * entry is whatever the client wrote, so rotating it would give an attacker
+ * a fresh per-IP bucket on every request. Anywhere else (local dev, another
+ * host) every caller shares one "unknown" bucket; the per-user limit still
+ * applies. Behind a different trusted proxy, read that proxy's header here.
+ */
 export function clientIp(headers: Headers): string {
-  const nf = headers.get("x-nf-client-connection-ip");
-  if (nf) return nf;
-  const xff = headers.get("x-forwarded-for");
-  if (xff) return (xff.split(",")[0] ?? "").trim() || "unknown";
-  return "unknown";
+  return headers.get("x-nf-client-connection-ip")?.trim() || "unknown";
 }
