@@ -28,6 +28,10 @@ the room with you.
 | Room flooding / scraping | Per-user + per-IP rate limits on every mutating route |
 | XSS | React escaping, no `dangerouslySetInnerHTML` anywhere, and a per-request nonce CSP (`src/lib/csp.ts`, set in middleware): only scripts carrying the nonce run, so injected `<script>` tags and inline handlers are blocked. Styles still allow inline |
 | Open redirect | Every `next=` goes through `safeNext()` (`src/lib/safe-redirect.ts`): same-site paths only |
+| Spoofed messages on our pages | The sign-in error page shows only fixed messages; the `reason=` it is given is a key, never echoed. Auth errors are logged server-side, not passed in URLs |
+| Faked walk stats | Users can insert or update only a walk's title, visibility and end time (column grants); distance, duration and pace come from `finalize_walk()`. A finished walk can't be reopened or re-timed (`guard_walk_end`) |
+| Rate-limit evasion | Per-IP limits key on Netlify's `x-nf-client-connection-ip` only; a client-supplied `X-Forwarded-For` is ignored |
+| Third-party tracking | No analytics. Fonts are self-hosted (`next/font`). At runtime the browser talks only to this site, Supabase and LiveKit, plus Google's image host for Google profile photos |
 | CSRF | Supabase cookies are `SameSite=Lax`; all mutations are POST/PATCH/DELETE through route handlers that verify the session server-side |
 | Stolen or abandoned session | Signed out after 7 days without activity (middleware, HttpOnly `wt_seen` cookie); auth cookies capped at 30 days and `Secure` in production; staff re-enter a TOTP code every 12 hours; deleting the account needs a sign-in within 30 minutes |
 | Location history held forever | Raw GPS points deleted 90 days after a walk (`prune_walk_points`, scheduled with pg_cron); summaries kept. Users can delete their account and everything in it from Settings, then Privacy |

@@ -88,9 +88,10 @@
   --color-teal: var(--teal);
   --color-teal-ghost: var(--teal-ghost);
   --color-chassis: var(--chassis);
-  --font-display: "Archivo", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+  /* Self-hosted by next/font (src/app/layout.tsx). */
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 html { -webkit-text-size-adjust: 100%; }

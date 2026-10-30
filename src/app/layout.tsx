@@ -1,5 +1,27 @@
 import type { Metadata, Viewport } from "next";
+import { Archivo, DM_Mono, Public_Sans } from "next/font/google";
 import "./globals.css";
+
+// Downloaded at build time and served from our own origin, so visitors'
+// browsers never contact Google (no IP or referrer sent to a third party).
+const archivo = Archivo({
+  subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  variable: "--font-archivo",
+  display: "swap",
+});
+const publicSans = Public_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-public-sans",
+  display: "swap",
+});
+const dmMono = DM_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-dm-mono",
+  display: "swap",
+});
 
 // Every page renders per request so it can carry that request's CSP nonce
 // (set in middleware). A prerendered page would ship scripts with no nonce,
@@ -29,15 +51,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=DM+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap"
-        />
-      </head>
+    <html
+      lang="en"
+      className={`${archivo.variable} ${publicSans.variable} ${dmMono.variable}`}
+    >
       <body>{children}</body>
     </html>
   );

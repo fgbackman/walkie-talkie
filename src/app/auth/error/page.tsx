@@ -17,7 +17,13 @@ const MESSAGES: Record<string, { title: string; body: string }> = {
     title: "That link didn't carry a sign-in code",
     body: "Links expire after an hour. Request a fresh one.",
   },
+  "sign-in-failed": {
+    title: "We couldn't sign you in",
+    body: "The link may have expired or already been used. Try signing in again.",
+  },
 };
+
+const FALLBACK = { title: "We couldn't sign you in", body: "Try again." };
 
 export default async function AuthErrorPage({
   searchParams,
@@ -25,10 +31,9 @@ export default async function AuthErrorPage({
   searchParams: Promise<{ reason?: string }>;
 }) {
   const { reason } = await searchParams;
-  const m = (reason && MESSAGES[reason]) || {
-    title: "We couldn't sign you in",
-    body: reason ? `The server said: ${reason}` : "Try again.",
-  };
+  // Only fixed messages: echoing `reason` would let a crafted link put any
+  // text on a page that looks like ours ("call this number to unlock…").
+  const m = (reason && Object.hasOwn(MESSAGES, reason) && MESSAGES[reason]) || FALLBACK;
 
   return (
     <main className="min-h-screen flex items-center justify-center px-5">

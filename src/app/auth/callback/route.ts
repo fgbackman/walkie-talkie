@@ -20,9 +20,9 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
-    return NextResponse.redirect(
-      `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,
-    );
+    // The detail goes to the server log, not into a URL the page would echo.
+    console.error("auth: code exchange failed", { code: error.code ?? error.status });
+    return NextResponse.redirect(`${origin}/auth/error?reason=sign-in-failed`);
   }
 
   return NextResponse.redirect(`${origin}${next}`);
