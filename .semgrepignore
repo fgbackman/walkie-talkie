@@ -1,0 +1,5 @@
+# Build output and dependencies.
+node_modules/
+.next/
+# Generated: a concatenation of supabase/migrations, which are scanned.
+supabase/_all_migrations.sql

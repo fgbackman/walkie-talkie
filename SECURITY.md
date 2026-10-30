@@ -5,6 +5,9 @@
 Email the address in the repo owner's profile. Please don't open a public
 issue for anything exploitable.
 
+If you're the one handling an incident, follow
+[INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md).
+
 ## Threat model
 
 This app handles two unusually sensitive things: **live microphone audio** and
@@ -37,6 +40,9 @@ npm run typecheck
 npm run lint
 npm run test            # unit tests (+ RLS assertions against a live project, if configured)
 npm run test:db         # every migration on a scratch Postgres, then the authorisation tests
+semgrep scan --config p/typescript --config p/react --config p/nextjs \
+  --config p/secrets --config p/github-actions --severity ERROR --severity WARNING
+                        # the same static analysis CI runs (pipx install semgrep)
 npm run audit           # npm audit, high and above
 npm run secrets:scan    # service-role key must not appear in .next/static
 ```
@@ -76,7 +82,6 @@ Not yet fixed; tracked here so they aren't forgotten.
   in the meantime.
 - The rate limiter still lets everyday routes through when its database
   errors. Staff actions, media tokens and account deletion now block instead.
-- No SAST in CI for this private repo (CodeQL needs Advanced Security).
-- Incident response: name a contact and write the containment and key
-  rotation runbook.
+- Incident response: the runbook exists (`INCIDENT_RESPONSE.md`), but its
+  contact table is still blank. Fill it in before launch.
 - Backups: enable point-in-time recovery and test a restore.

@@ -31,7 +31,8 @@ export default function PrivacyForm({ initial }: { initial: State }) {
   const [error, setError] = useState<string | null>(null);
 
   async function toggle(key: keyof State) {
-    const next = { ...state, [key]: !state[key] };
+    const previous = state;
+    const next = { ...previous, [key]: !previous[key] };
     setState(next);
     setSaving(true);
     setError(null);
@@ -42,7 +43,8 @@ export default function PrivacyForm({ initial }: { initial: State }) {
     });
     setSaving(false);
     if (!res.ok) {
-      setState(state);
+      // Optimistic update failed: put the switch back where it was.
+      setState(previous);
       setError("Could not save that. Try again.");
       return;
     }

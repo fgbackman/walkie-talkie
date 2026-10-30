@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -72,7 +72,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Migrations + authorisation tests
         run: npm run test:db
@@ -85,6 +85,26 @@ jobs:
           git diff --quiet -I '^-- Generated ' -- supabase/_all_migrations.sql \
             || { echo "Run npm run db:bundle and commit the result."; exit 1; }
 
+  # Static analysis. CodeQL (below) needs Advanced Security on a private repo;
+  # Semgrep's open rule packs run anywhere. Informational rules (i18n and the
+  # like) are excluded; any ERROR or WARNING finding fails the build.
+  semgrep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Semgrep
+        run: pipx install semgrep==1.183.0
+
+      - name: Scan
+        run: >-
+          semgrep scan --metrics=off
+          --config p/typescript --config p/react --config p/nextjs
+          --config p/secrets --config p/github-actions
+          --severity ERROR --severity WARNING
+          --error
+
   # CodeQL needs GitHub Advanced Security on a private repo. It runs
   # automatically if this repo is ever made public; until then the `verify`
   # job above is the gate.
@@ -95,9 +115,9 @@ jobs:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: github/codeql-action/init@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
         with:
           languages: javascript-typescript
           queries: security-extended
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
